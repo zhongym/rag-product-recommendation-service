@@ -22,7 +22,6 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 import static com.example.rag.model.ProductDocument.INDEX_NAME;
 
@@ -100,23 +99,26 @@ public class ProductIndexService {
     }
 
     /**
-     * Batch index multiple products
+     * Batch index multiple products with async embedding generation
+     * First saves basic data to ES, then async generates and updates embeddings
      */
     @Async
     public CompletableFuture<BulkResponse> batchIndexProducts(List<Product> products) {
         return CompletableFuture.supplyAsync(() -> {
             try {
+                // Step 1: Create documents without embeddings (basic data only)
                 List<BulkOperation> operations = products.stream()
                         .map(product -> {
-                            ProductDocument document = convertToDocument(product);
+                            ProductDocument document = convertToDocumentWithoutEmbedding(product);
                             return BulkOperation.of(b -> b
                                     .index(idx -> idx
                                             .index(INDEX_NAME)
                                             .id(document.getId())
                                             .document(document)));
                         })
-                        .collect(Collectors.toList());
+                        .toList();
 
+                // Step 2: Bulk index basic data to ES
                 BulkResponse response = elasticsearchClient.bulk(b -> b.operations(operations));
 
                 if (response.errors()) {
@@ -127,8 +129,11 @@ public class ProductIndexService {
                         }
                     });
                 } else {
-                    log.info("Successfully indexed {} products", products.size());
+                    log.info("Successfully indexed {} products (basic data)", products.size());
                 }
+
+                // Step 3: Async generate embeddings and update documents
+                asyncUpdateEmbeddings(products);
 
                 return response;
             } catch (Exception e) {
@@ -172,6 +177,61 @@ public class ProductIndexService {
             log.error("Error getting product: {}", productId, e);
             throw new RuntimeException("Failed to get product", e);
         }
+    }
+
+    /**
+     * Convert Product entity to ProductDocument without embedding (for initial indexing)
+     */
+    private ProductDocument convertToDocumentWithoutEmbedding(Product product) {
+        String searchableText = buildSearchableText(product);
+
+        return ProductDocument.builder()
+                .id(product.getId())
+                .name(product.getName())
+                .description(product.getDescription())
+                .category(product.getCategory())
+                .price(product.getPrice() != null ? product.getPrice().doubleValue() : null)
+                .tags(product.getTags())
+                .brand(product.getBrand())
+                .stock(product.getStock())
+                .imageUrl(product.getImageUrl())
+                .searchableText(searchableText)
+                .embedding(null)  // Will be updated asynchronously
+                .build();
+    }
+
+    /**
+     * Async generate embeddings and update documents in ES
+     */
+    public void asyncUpdateEmbeddings(List<Product> products) {
+        CompletableFuture.runAsync(() -> {
+            for (Product product : products) {
+                try {
+                    // Generate embedding
+                    String searchableText = buildSearchableText(product);
+                    float[] embedding = embeddingModel.embed(searchableText).content().vector();
+
+                    // Create partial document with embedding
+                    ProductDocument updateDoc = ProductDocument.builder()
+                            .embedding(embedding)
+                            .searchableText(searchableText)
+                            .build();
+
+                    // Update document with embedding
+                    elasticsearchClient.update(u -> u
+                            .index(INDEX_NAME)
+                            .id(product.getId())
+                            .doc(updateDoc),
+                            ProductDocument.class);
+
+                    log.debug("Updated embedding for product: {}", product.getId());
+
+                } catch (Exception e) {
+                    log.error("Error updating embedding for product: {}", product.getId(), e);
+                }
+            }
+            log.info("Completed embedding updates for {} products", products.size());
+        });
     }
 
     /**
