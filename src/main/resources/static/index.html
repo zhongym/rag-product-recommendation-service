@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能商品推荐系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        main {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        /* 搜索表单 */
+        .search-section {
+            margin-bottom: 30px;
+        }
+
+        .query-input {
+            width: 100%;
+            min-height: 120px;
+            padding: 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        .query-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .topk-control {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .topk-slider {
+            width: 200px;
+            cursor: pointer;
+        }
+
+        .topk-value {
+            font-weight: bold;
+            color: #667eea;
+            min-width: 30px;
+        }
+
+        .toggle-filters {
+            padding: 10px 20px;
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .toggle-filters:hover {
+            background: #edf2f7;
+        }
+
+        /* 过滤条件 */
+        .filters {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 12px;
+            display: none;
+        }
+
+        .filters:not(.hidden) {
+            display: block;
+        }
+
+        .filter-group {
+            margin-bottom: 15px;
+        }
+
+        .filter-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        .filter-group input[type="text"],
+        .filter-group input[type="number"] {
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            width: 100%;
+        }
+
+        .price-range {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .price-range input {
+            flex: 1;
+        }
+
+        .search-btn {
+            width: 100%;
+            margin-top: 20px;
+            padding: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .search-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .search-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+
+        .loading:not(.hidden) {
+            display: block;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            margin: 0 auto 20px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* 错误提示 */
+        .error {
+            margin-top: 20px;
+            padding: 16px;
+            background: #fed7d7;
+            color: #c53030;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .error:not(.hidden) {
+            display: block;
+        }
+
+        /* 结果展示 */
+        .results-section {
+            display: none;
+        }
+
+        .results-section:not(.hidden) {
+            display: block;
+        }
+
+        .results-header {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .results-header h2 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            color: #2d3748;
+        }
+
+        .results-meta {
+            color: #718096;
+            font-size: 0.95rem;
+        }
+
+        .results-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .product-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.3s, box-shadow 0.3s;
+            background: white;
+        }
+
+        .product-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .product-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: #f7fafc;
+        }
+
+        .product-info {
+            padding: 20px;
+        }
+
+        .product-info h3 {
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+            color: #2d3748;
+        }
+
+        .product-meta {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .price {
+            background: #48bb78;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .category {
+            background: #4299e1;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .brand {
+            background: #ed8936;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .reason {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            color: #92400e;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-weight: 500;
+            border-left: 4px solid #f59e0b;
+        }
+
+        .description {
+            color: #718096;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            opacity: 0.8;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2rem;
+            }
+
+            main {
+                padding: 20px;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .topk-control {
+                justify-content: space-between;
+            }
+
+            .results-list {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛍️ 智能商品推荐</h1>
+            <p>基于 AI 的自然语言商品搜索 - 告诉我您想要什么</p>
+        </header>
+
+        <main>
+            <!-- 搜索表单 -->
+            <section class="search-section">
+                <textarea id="query-input" class="query-input" placeholder="描述您想要的商品，例如：
+
+适合夏天跑步的轻便运动鞋，预算500以内
+
+性价比高的办公笔记本，需要长续航
+
+送给女生的生日礼物，200元左右"></textarea>
+
+                <div class="controls">
+                    <div class="topk-control">
+                        <label>返回数量:</label>
+                        <input type="range" id="topk-slider" class="topk-slider" min="1" max="50" value="10">
+                        <span id="topk-value" class="topk-value">10</span>
+                    </div>
+                    <button id="toggle-filters" class="toggle-filters">高级过滤 ▼</button>
+                </div>
+
+                <!-- 过滤条件 -->
+                <div id="filters" class="filters hidden">
+                    <div class="filter-group">
+                        <label>价格区间</label>
+                        <div class="price-range">
+                            <input type="number" id="min-price" placeholder="最低价格">
+                            <span>-</span>
+                            <input type="number" id="max-price" placeholder="最高价格">
+                        </div>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>分类（多个用逗号分隔）</label>
+                        <input type="text" id="categories" placeholder="例如: 鞋类,服装">
+                    </div>
+
+                    <div class="filter-group">
+                        <label>品牌（多个用逗号分隔）</label>
+                        <input type="text" id="brands" placeholder="例如: Nike,李宁">
+                    </div>
+
+                    <div class="filter-group">
+                        <label>
+                            <input type="checkbox" id="in-stock">
+                            仅显示有货商品
+                        </label>
+                    </div>
+                </div>
+
+                <button id="search-btn" class="search-btn">🔍 获取智能推荐</button>
+            </section>
+
+            <!-- Loading 动画 -->
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>AI 正在分析您的需求...</p>
+            </div>
+
+            <!-- 错误提示 -->
+            <div id="error" class="error hidden"></div>
+
+            <!-- 推荐结果 -->
+            <section id="results-section" class="results-section hidden">
+                <div class="results-header">
+                    <h2>推荐结果</h2>
+                    <p id="results-meta" class="results-meta"></p>
+                </div>
+                <div id="results-list" class="results-list"></div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by LangChain4j + Elasticsearch + OpenAI</p>
+        </footer>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

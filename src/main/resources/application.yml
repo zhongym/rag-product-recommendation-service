@@ -1,0 +1,64 @@
+# Server Configuration
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: rag-recommendation-system
+  profiles:
+    active: dev
+  elasticsearch:
+    uris: localhost:9200
+    username: ${ES_USERNAME:elastic}
+    password: ${ES_PASSWORD:}
+    connection-timeout: 10s
+    socket-timeout: 30s
+
+# OpenAI Configuration
+openai:
+  api:
+    key: ${OPENAI_API_KEY:}
+    base-url: ${OPENAI_API_URL:https://api.openai.com}
+    timeout: 120s
+    embedding:
+      model: text-embedding-3-small
+      dimensions: 1024
+    llm:
+      model: gpt-4o-mini
+      max-tokens: 2000
+      temperature: 0.7
+
+# RAG Recommendation Configuration
+rag:
+  recommendation:
+    default-top-k: 10
+    max-top-k: 50
+    search:
+      hybrid-weight-vector: 0.7
+      hybrid-weight-bm25: 0.3
+
+
+# Actuator Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# Logging Configuration
+logging:
+  level:
+    com.example.rag: DEBUG
+    dev:
+      langchain4j: DEBUG
+      ai4j:
+        openai4j: DEBUG
+    org.elasticsearch.client: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"
+
