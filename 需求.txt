@@ -1,0 +1,88 @@
+生产级的 LangChain4j + Spring Boot + Elasticsearch RAG + Open-ai 商品推荐系统。
+
+
+一、整体方案概览
+
+目标：用户输入自然语言需求 → 系统返回商品推荐列表 + 推荐理由
+
+核心思路：
+用户需求（自然语言）
+        │
+        ▼
+  Query Embedding
+        │
+        ▼
+Vector DB（商品向量检索）
+        │
+        ▼
+  TopK候选商品
+        │
+        ▼
+       LLM
+        │
+生成推荐列表 + 理由
+        │
+        ▼
+返回 JSON（商品ID、名称、推荐理由）
+
+关键点：
+	1.	RAG：用向量检索召回相关商品文档/信息
+	2.	LLM：基于召回商品和用户需求生成推荐理由，并排序
+	3.	JSON结构化输出：便于程序解析
+
+
+二、数据准备
+
+1. 商品数据字段
+字段
+id 商品唯一ID
+name 商品名称
+description 商品描述、特点
+category 分类
+price 价格
+tags 标签（如“夏天”“跑步”“轻便”）
+
+2. 生成商品向量
+•	将商品文本拼接为一句话：
+
+id: 1001, name: Nike Pegasus 40, description: 轻便透气，适合夏天跑步, price: 499
+
+•	使用 Embedding 模型 转向量，存入 Elasticsearch / Milvus / Pinecone 等向量数据库
+
+三、向量检索（Retrieval）
+用户查询示例：
+	适合夏天跑步的轻便运动鞋，预算500以内
+
+1.	Embedding用户查询 → 得到向量
+2.	向量搜索TopK候选商品，例如 Top 10
+3.	输出结果类似
+[
+  {"id":"1001", "name":"Nike Pegasus 40", "price":499, "description":"轻便透气"},
+  {"id":"1003", "name":"李宁轻云跑鞋", "price":399, "description":"夏季跑步鞋轻便"}
+]
+
+四、LLM生成推荐（Generation）
+1. Prompt模板示例
+用户查询: {query}
+
+候选商品:
+{candidate_list}
+
+请从候选商品中推荐 3 个最适合的商品，并只返回 **JSON数组**，每个商品包含字段：
+- id: 商品ID
+- name: 商品名称
+- reason: 推荐理由
+
+例如输出：
+[
+  {"id": "1001", "name": "Nike Pegasus 40", "reason": "轻便透气，适合夏季跑步"},
+  {"id": "1003", "name": "李宁轻云跑鞋", "reason": "价格低，夏季跑步合适"}
+]
+
+
+五、生产优化建议
+	1.	TopK召回：一般取 10~50 个候选商品
+	2.	Hybrid Search：BM25 + 向量搜索
+	3.	Rerank：用专门的 reranker 模型对候选商品排序
+	4.	用户画像：可加权推荐结果
+	5.	流式输出（SSE）：对大型商品集可边生成边返回
