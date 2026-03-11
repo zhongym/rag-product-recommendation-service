@@ -53,6 +53,10 @@
         "type": "keyword",
         "doc_values": true
       },
+      "imageUrl": {
+        "type": "keyword",
+        "doc_values": true
+      },
       "stock": {
         "type": "integer",
         "doc_values": true
