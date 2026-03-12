@@ -60,6 +60,14 @@
             <version>${langchain4j.version}</version>
         </dependency>
 
+        <!-- LangChain4j Jina (for reranking) -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-jina</artifactId>
+            <version>${langchain4j.version}</version>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Elasticsearch Java Client -->
         <dependency>
             <groupId>co.elastic.clients</groupId>

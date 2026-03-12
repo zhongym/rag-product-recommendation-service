@@ -26,17 +26,22 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class VectorSearchService {
-
     private final ElasticsearchClient elasticsearchClient;
     private final EmbeddingModel embeddingModel;
     private final RagProperties ragProperties;
-    private final ObjectMapper objectMapper;
+    private final RerankService rerankService;
 
     /**
      * Perform hybrid search combining vector similarity and BM25
+     * If reranking is enabled, uses two-stage retrieval:
+     * Stage 1: Hybrid search (vector + BM25) to retrieve candidates
+     * Stage 2: Rerank candidates using scoring model
      */
     public List<ProductDocument> hybridSearch(String query, int topK, SearchFilters filters) {
         try {
+            // Calculate candidate count (if reranking enabled, retrieve more candidates)
+            int candidateCount = calculateCandidateCount(topK);
+
             // Generate embedding for query
             List<Float> queryVector = buildVector(query);
 
@@ -62,15 +67,18 @@ public class VectorSearchService {
                             .minimumShouldMatch("1"))
             );
 
+            Query vectorQuery = Query.of(q ->
+                    q.knn(k -> k
+                            .field(ProductDocument.FIELD_EMBEDDING)
+                            .queryVector(queryVector)
+                            .k(candidateCount)
+                            .numCandidates(candidateCount * 10)
+                            .boost((float) vectorWeight)));
+
             // Combine with filters
             BoolQuery.Builder boolBuilder = new BoolQuery.Builder()
                     .should(bm25Query)
-                    .should(q -> q.knn(k -> k
-                            .field(ProductDocument.FIELD_EMBEDDING)
-                            .queryVector(queryVector)
-                            .k(topK)
-                            .numCandidates(topK * 10)
-                            .boost((float) vectorWeight)));
+                    .should(vectorQuery);
 
             // Add filter queries
             List<Query> filterQueries = buildFilterQueries(filters);
@@ -82,20 +90,45 @@ public class VectorSearchService {
             // Build search request
             SearchRequest searchRequest = SearchRequest.of(s -> s
                     .index(ProductDocument.INDEX_NAME)
-                    .size(topK)
+                    .size(candidateCount)
                     .query(toQuery)
                     .minScore(0.1));
 
-            log.debug("query:{}",searchRequest.query());
+            log.debug("query:{}", searchRequest.query());
 
             SearchResponse<ProductDocument> response = elasticsearchClient.search(
                     searchRequest, ProductDocument.class);
 
-            // Results are already ranked by ES with correct weights via boost
-            return response.hits().hits().stream()
+            // Extract candidates
+            List<ProductDocument> candidates = response.hits().hits().stream()
                     .map(hit -> hit.source() != null ? hit.source() : null)
                     .filter(Objects::nonNull)
-                    .collect(Collectors.toList());
+                    .toList();
+
+            // Stage 2: Rerank if enabled
+            if (candidates.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            // Check if reranking is enabled
+            if (Boolean.TRUE.equals(ragProperties.getRerank().getEnabled())) {
+                log.debug("Reranking {} candidates to top {}", candidates.size(), topK);
+
+                List<RerankService.ScoredProduct> rerankedProducts = rerankService.rerank(
+                        query,
+                        candidates,
+                        topK
+                );
+
+                return rerankedProducts.stream()
+                        .map(RerankService.ScoredProduct::getProduct)
+                        .toList();
+            } else {
+                // Return original order (limited to topK)
+                return candidates.stream()
+                        .limit(topK)
+                        .toList();
+            }
 
         } catch (Exception e) {
             log.error("Error in hybrid search for query: {}", query, e);
@@ -201,6 +234,20 @@ public class VectorSearchService {
         }
 
         return queries;
+    }
+
+    /**
+     * Calculate candidate count based on reranking configuration
+     * If reranking is enabled, return topK * candidatesMultiplier
+     * Otherwise, return topK
+     */
+    private int calculateCandidateCount(int topK) {
+        if (Boolean.TRUE.equals(ragProperties.getRerank().getEnabled())) {
+            int multiplier = ragProperties.getRerank().getCandidatesMultiplier();
+            int maxCandidates = ragProperties.getMaxTopK() * multiplier;
+            return Math.min(topK * multiplier, maxCandidates);
+        }
+        return topK;
     }
 
     /**
