@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 
 /**
- * Service for reranking search results using scoring models
+ * 使用评分模型对搜索结果进行重排序的服务
  */
 @Slf4j
 @Service
@@ -23,7 +23,7 @@ public class RerankService {
     private final RagProperties ragProperties;
 
     /**
-     * Lazy initialization of ScoringModel
+     * ScoringModel 的懒加载初始化
      */
     @Getter(lazy = true)
     private final ScoringModel scoringModel = initScoringModel();
@@ -31,11 +31,11 @@ public class RerankService {
     private ScoringModel initScoringModel() {
         RagProperties.Rerank rerankConfig = ragProperties.getRerank();
         if (rerankConfig == null || rerankConfig.getApiKey() == null || rerankConfig.getApiKey().isBlank()) {
-            log.warn("Rerank API key not configured, reranking will be disabled");
+            log.warn("未配置 Rerank API 密钥，重排序将被禁用");
             return null;
         }
 
-        log.info("Initializing Jina ScoringModel with model: {}", rerankConfig.getModel());
+        log.info("正在初始化 Jina ScoringModel，模型: {}", rerankConfig.getModel());
         return JinaScoringModel.builder()
                 .apiKey(rerankConfig.getApiKey())
                 .modelName(rerankConfig.getModel())
@@ -45,43 +45,43 @@ public class RerankService {
     }
 
     /**
-     * Rerank candidate products based on query relevance using batch scoring
+     * 基于查询相关性使用批量评分对候选商品进行重排序
      *
-     * @param query      User query
-     * @param candidates List of candidate products
-     * @param topK       Number of top results to return
-     * @return Reranked products with scores
+     * @param query      用户查询
+     * @param candidates 候选商品列表
+     * @param topK       返回的 top 结果数量
+     * @return 带分数的重排序商品列表
      */
     public List<ScoredProduct> rerank(String query, List<ProductDocument> candidates, int topK) {
         if (candidates.isEmpty()) {
             return Collections.emptyList();
         }
 
-        // Check if reranking is enabled
+        // 检查是否启用重排序
         RagProperties.Rerank rerankConfig = ragProperties.getRerank();
         if (rerankConfig == null || !Boolean.TRUE.equals(rerankConfig.getEnabled())) {
-            log.debug("Reranking is disabled, returning original order");
+            log.debug("重排序已禁用，返回原始顺序");
             return toScoredProducts(candidates, topK);
         }
 
-        // Check if scoring model is initialized
+        // 检查评分模型是否已初始化
         if (getScoringModel() == null) {
-            log.warn("Scoring model not initialized, returning original order");
+            log.warn("评分模型未初始化，返回原始顺序");
             return toScoredProducts(candidates, topK);
         }
 
         try {
-            log.debug("Batch reranking {} candidates for query: {}", candidates.size(), query);
+            log.debug("批量重排序 {} 个候选商品，查询: {}", candidates.size(), query);
 
-            // Convert all products to text segments
+            // 将所有商品转换为文本片段
             List<TextSegment> segments = candidates.stream()
                     .map(product -> TextSegment.from(buildProductText(product)))
                     .toList();
 
-            // Batch score all segments at once using scoreAll
+            // 使用 scoreAll 批量对所有片段进行评分
             var scoreList = getScoringModel().scoreAll(segments, query).content();
 
-            // Map scores back to products (order is preserved)
+            // 将分数映射回商品（保持顺序）
             List<ScoredProduct> scoredProducts = new ArrayList<>();
             for (int i = 0; i < candidates.size() && i < scoreList.size(); i++) {
                 ProductDocument product = candidates.get(i);
@@ -89,23 +89,23 @@ public class RerankService {
                 scoredProducts.add(new ScoredProduct(product, score));
             }
 
-            // Sort by score (descending) and take top K
+            // 按分数排序（降序）并取 top K
             List<ScoredProduct> result = scoredProducts.stream()
                     .sorted((a, b) -> Double.compare(b.getScore(), a.getScore()))
                     .limit(topK)
                     .toList();
 
-            log.debug("Batch reranking completed, returning top {} results", result.size());
+            log.debug("批量重排序完成，返回 top {} 个结果", result.size());
             return result;
 
         } catch (Exception e) {
-            log.error("Batch reranking failed for query: {}, returning original order", query, e);
+            log.error("批量重排序失败，查询: {}，返回原始顺序", query, e);
             return toScoredProducts(candidates, topK);
         }
     }
 
     /**
-     * Build text representation of product for reranking
+     * 构建商品的文本表示用于重排序
      */
     private String buildProductText(ProductDocument product) {
         StringBuilder sb = new StringBuilder();
@@ -133,7 +133,7 @@ public class RerankService {
     }
 
     /**
-     * Convert products to ScoredProduct without scores (original order)
+     * 将商品转换为不带分数的 ScoredProduct（原始顺序）
      */
     private List<ScoredProduct> toScoredProducts(List<ProductDocument> products, int topK) {
         return products.stream()
@@ -143,7 +143,7 @@ public class RerankService {
     }
 
     /**
-     * Wrapper class for product with rerank score
+     * 带重排序分数的商品包装类
      */
     @Getter
     public static class ScoredProduct {

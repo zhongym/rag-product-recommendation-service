@@ -24,7 +24,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Core RAG recommendation service integrating retrieval and generation
+ * 核心 RAG 推荐服务，集成检索和生成
  */
 @Slf4j
 @Service
@@ -39,57 +39,57 @@ public class RecommendationService {
 
     @PostConstruct
     public void init() {
-        log.info("RecommendationService initialized with model: {}",
+        log.info("RecommendationService 初始化完成，使用模型: {}",
                 openAIProperties.getLlm().getModel());
     }
 
     /**
-     * Generate product recommendations based on user query
+     * 根据用户查询生成商品推荐
      */
     public RecommendationResponse recommend(RecommendationRequest request) {
         long startTime = System.currentTimeMillis();
 
         try {
-            // Validate and adjust topK
+            // 验证并调整 topK
             int topK = validateTopK(request.getTopK());
 
-            // Step 1: Retrieve candidate products using hybrid search
-            log.debug("Retrieving candidates for query: {}", request.getQuery());
+            // 阶段 1: 使用混合检索获取候选商品
+            log.debug("正在检索候选商品，查询: {}", request.getQuery());
             List<ProductDocument> candidates = vectorSearchService.hybridSearch(
                     request.getQuery(),
-                    Math.min(topK * 3, 50), // Get more candidates for reranking
+                    Math.min(topK * 3, 50),
                     request.getFilters()
             );
 
             if (candidates.isEmpty()) {
-                log.warn("No candidates found for query: {}", request.getQuery());
+                log.warn("未找到候选商品，查询: {}", request.getQuery());
                 return buildEmptyResponse(request, startTime);
             }
 
-            // Step 2: Build prompt with candidates
+            // 阶段 2: 使用候选商品构建提示词
             String prompt = buildRecommendationPrompt(
                     request.getQuery(),
                     candidates,
                     topK
             );
 
-            log.debug("prompt:{}", prompt);
-            log.debug("Generated prompt for LLM");
+            log.debug("提示词:{}", prompt);
+            log.debug("已生成 LLM 提示词");
 
-            // Step 3: Generate recommendations using LLM
+            // 阶段 3: 使用 LLM 生成推荐
             ChatRequest chatRequest = ChatRequest.builder()
                     .messages(new UserMessage(prompt))
                     .build();
             String llmResponse = chatLanguageModel.chat(chatRequest).aiMessage().text();
-            log.debug("LLM response received");
+            log.debug("已收到 LLM 响应");
 
-            // Step 4: Parse LLM response
+            // 阶段 4: 解析 LLM 响应
             List<RecommendationResponse.RecommendationResult> results = parseLlmResponse(
                     llmResponse,
                     candidates
             );
 
-            // Step 5: Build response
+            // 阶段 5: 构建响应
             long processingTime = System.currentTimeMillis() - startTime;
 
             return RecommendationResponse.builder()
@@ -102,23 +102,23 @@ public class RecommendationService {
                     .build();
 
         } catch (Exception e) {
-            log.error("Error generating recommendations for query: {}", request.getQuery(), e);
-            throw new RuntimeException("Failed to generate recommendations", e);
+            log.error("生成推荐失败，查询: {}", request.getQuery(), e);
+            throw new RuntimeException("生成推荐失败", e);
         }
     }
 
     /**
-     * Generate streaming recommendations (SSE)
-     * Note: This is a simplified implementation - full streaming requires proper Reactor integration
+     * 生成流式推荐（SSE）
+     * 注意：这是简化实现 - 完整的流式需要正确的 Reactor 集成
      */
     public Flux<RecommendationResponse> recommendStream(RecommendationRequest request) {
-        // For now, just return the non-streaming result wrapped in a Flux
-        // TODO: Implement true streaming with proper SSE support
+        // 目前仅返回包装在 Flux 中的非流式结果
+        // TODO: 实现真正的流式和正确的 SSE 支持
         return Flux.just(recommend(request));
     }
 
     /**
-     * Build recommendation prompt for LLM
+     * 为 LLM 构建推荐提示词
      */
     private String buildRecommendationPrompt(String query, List<ProductDocument> candidates, int topN) {
         StringBuilder candidatesText = new StringBuilder();
@@ -171,14 +171,14 @@ public class RecommendationService {
     }
 
     /**
-     * Parse LLM JSON response
+     * 解析 LLM 的 JSON 响应
      */
     private List<RecommendationResponse.RecommendationResult> parseLlmResponse(String llmResponse, List<ProductDocument> candidates) {
         try {
-            // Clean up response - extract JSON array
+            // 清理响应 - 提取 JSON 数组
             String cleaned = llmResponse.trim();
 
-            // Find JSON array boundaries
+            // 查找 JSON 数组边界
             int startIndex = cleaned.indexOf('[');
             int endIndex = cleaned.lastIndexOf(']');
 
@@ -186,21 +186,21 @@ public class RecommendationService {
                 cleaned = cleaned.substring(startIndex, endIndex + 1);
             }
 
-            // Parse JSON into DTO
+            // 解析 JSON 为 DTO
             List<LlmRecommendationItem> parsed = objectMapper.readValue(
                     cleaned,
                     new TypeReference<List<LlmRecommendationItem>>() {
                     }
             );
 
-            // Create lookup map for candidate documents
+            // 为候选文档创建查找映射
             Map<String, ProductDocument> candidateMap = candidates.stream()
                     .collect(Collectors.toMap(
                             ProductDocument::getId,
                             doc -> doc
                     ));
 
-            // Build recommendation results
+            // 构建推荐结果
             List<RecommendationResponse.RecommendationResult> results = new ArrayList<>();
             for (LlmRecommendationItem item : parsed) {
                 ProductDocument doc = candidateMap.get(item.getId());
@@ -217,16 +217,16 @@ public class RecommendationService {
                             .reason(item.getReason())
                             .build());
                 } else {
-                    log.warn("Recommended product ID {} not found in candidates", item.getId());
+                    log.warn("推荐的商品 ID {} 在候选商品中未找到", item.getId());
                 }
             }
 
             return results;
 
         } catch (Exception e) {
-            log.error("Error parsing LLM response: {}", llmResponse, e);
+            log.error("解析 LLM 响应失败: {}", llmResponse, e);
 
-            // Fallback: return top candidates from search
+            // 降级处理：返回检索结果中的前几个候选
             return candidates.stream()
                     .limit(5)
                     .map(doc -> RecommendationResponse.RecommendationResult.builder()
@@ -243,7 +243,7 @@ public class RecommendationService {
     }
 
     /**
-     * Validate and adjust topK parameter
+     * 验证并调整 topK 参数
      */
     private int validateTopK(Integer topK) {
         if (topK == null || topK < 1) {
@@ -253,7 +253,7 @@ public class RecommendationService {
     }
 
     /**
-     * Build empty response when no candidates found
+     * 未找到候选商品时构建空响应
      */
     private RecommendationResponse buildEmptyResponse(RecommendationRequest request, long startTime) {
         return RecommendationResponse.builder()
